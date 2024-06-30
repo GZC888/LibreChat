@@ -1,65 +1,69 @@
-import { useRecoilValue } from 'recoil';
 import { useEffect, useRef } from 'react';
 import { useParams } from 'react-router-dom';
+import { EModelEndpoint } from 'librechat-data-provider';
 import {
   useGetModelsQuery,
   useGetStartupConfig,
   useGetEndpointsQuery,
 } from 'librechat-data-provider/react-query';
-import { defaultOrderQuery } from 'librechat-data-provider';
 import type { TPreset } from 'librechat-data-provider';
-import { useGetConvoIdQuery, useListAssistantsQuery } from '~/data-provider';
-import { useNewConvo, useConfigOverride } from '~/hooks';
+import { useNewConvo, useAppStartup, useAssistantListMap } from '~/hooks';
+import { getDefaultModelSpec, getModelSpecIconURL } from '~/utils';
+import { useGetConvoIdQuery } from '~/data-provider';
 import ChatView from '~/components/Chat/ChatView';
 import useAuthRedirect from './useAuthRedirect';
 import { Spinner } from '~/components/svg';
 import store from '~/store';
 
 export default function ChatRoute() {
-  const index = 0;
-
-  useConfigOverride();
-  const { conversationId } = useParams();
   const { data: startupConfig } = useGetStartupConfig();
+  const { isAuthenticated, user } = useAuthRedirect();
+  useAppStartup({ startupConfig, user });
+
+  const index = 0;
+  const { conversationId } = useParams();
 
   const { conversation } = store.useCreateConversationAtom(index);
-  const modelsQueryEnabled = useRecoilValue(store.modelsQueryEnabled);
-  const { isAuthenticated } = useAuthRedirect();
   const { newConversation } = useNewConvo();
   const hasSetConversation = useRef(false);
 
-  const modelsQuery = useGetModelsQuery({ enabled: isAuthenticated && modelsQueryEnabled });
+  const modelsQuery = useGetModelsQuery({
+    enabled: isAuthenticated,
+    refetchOnMount: 'always',
+  });
   const initialConvoQuery = useGetConvoIdQuery(conversationId ?? '', {
     enabled: isAuthenticated && conversationId !== 'new',
   });
-  const endpointsQuery = useGetEndpointsQuery({ enabled: isAuthenticated && modelsQueryEnabled });
-  const { data: assistants = null } = useListAssistantsQuery(defaultOrderQuery, {
-    select: (res) =>
-      res.data.map(({ id, name, metadata, model }) => ({ id, name, metadata, model })),
-  });
+  const endpointsQuery = useGetEndpointsQuery({ enabled: isAuthenticated });
+  const assistantListMap = useAssistantListMap();
 
   useEffect(() => {
-    if (startupConfig?.appTitle) {
-      document.title = startupConfig.appTitle;
-      localStorage.setItem('appTitle', startupConfig.appTitle);
+    const shouldSetConvo =
+      startupConfig && !hasSetConversation.current && !modelsQuery.data?.initial;
+    /* Early exit if startupConfig is not loaded and conversation is already set and only initial models have loaded */
+    if (!shouldSetConvo) {
+      return;
     }
-  }, [startupConfig]);
 
-  useEffect(() => {
-    if (
-      conversationId === 'new' &&
-      endpointsQuery.data &&
-      modelsQuery.data &&
-      !hasSetConversation.current
-    ) {
-      newConversation({ modelsData: modelsQuery.data });
-      hasSetConversation.current = !!assistants;
-    } else if (
-      initialConvoQuery.data &&
-      endpointsQuery.data &&
-      modelsQuery.data &&
-      !hasSetConversation.current
-    ) {
+    if (conversationId === 'new' && endpointsQuery.data && modelsQuery.data) {
+      const spec = getDefaultModelSpec(startupConfig.modelSpecs?.list);
+
+      newConversation({
+        modelsData: modelsQuery.data,
+        template: conversation ? conversation : undefined,
+        ...(spec
+          ? {
+            preset: {
+              ...spec.preset,
+              iconURL: getModelSpecIconURL(spec),
+              spec: spec.name,
+            },
+          }
+          : {}),
+      });
+
+      hasSetConversation.current = true;
+    } else if (initialConvoQuery.data && endpointsQuery.data && modelsQuery.data) {
       newConversation({
         template: initialConvoQuery.data,
         /* this is necessary to load all existing settings */
@@ -67,11 +71,31 @@ export default function ChatRoute() {
         modelsData: modelsQuery.data,
         keepLatestMessage: true,
       });
-      hasSetConversation.current = !!assistants;
-    } else if (!hasSetConversation.current && conversationId === 'new' && assistants) {
-      newConversation({ modelsData: modelsQuery.data });
       hasSetConversation.current = true;
-    } else if (!hasSetConversation.current && assistants) {
+    } else if (
+      conversationId === 'new' &&
+      assistantListMap[EModelEndpoint.assistants] &&
+      assistantListMap[EModelEndpoint.azureAssistants]
+    ) {
+      const spec = getDefaultModelSpec(startupConfig.modelSpecs?.list);
+      newConversation({
+        modelsData: modelsQuery.data,
+        template: conversation ? conversation : undefined,
+        ...(spec
+          ? {
+            preset: {
+              ...spec.preset,
+              iconURL: getModelSpecIconURL(spec),
+              spec: spec.name,
+            },
+          }
+          : {}),
+      });
+      hasSetConversation.current = true;
+    } else if (
+      assistantListMap[EModelEndpoint.assistants] &&
+      assistantListMap[EModelEndpoint.azureAssistants]
+    ) {
       newConversation({
         template: initialConvoQuery.data,
         preset: initialConvoQuery.data as TPreset,
@@ -80,8 +104,15 @@ export default function ChatRoute() {
       });
       hasSetConversation.current = true;
     }
+    /* Creates infinite render if all dependencies included due to newConversation invocations exceeding call stack before hasSetConversation.current becomes truthy */
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initialConvoQuery.data, modelsQuery.data, endpointsQuery.data, assistants]);
+  }, [
+    startupConfig,
+    initialConvoQuery.data,
+    endpointsQuery.data,
+    modelsQuery.data,
+    assistantListMap,
+  ]);
 
   if (endpointsQuery.isLoading || modelsQuery.isLoading) {
     return <Spinner className="m-auto text-black dark:text-white" />;

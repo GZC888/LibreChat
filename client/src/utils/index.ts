@@ -4,10 +4,15 @@ export * from './files';
 export * from './latex';
 export * from './convos';
 export * from './presets';
+export * from './prompts';
 export * from './textarea';
+export * from './messages';
 export * from './languages';
 export * from './endpoints';
+export * from './sharedLink';
+export * from './promptGroups';
 export { default as cn } from './cn';
+export { default as logger } from './logger';
 export { default as buildTree } from './buildTree';
 export { default as getLoginError } from './getLoginError';
 export { default as cleanupPreset } from './cleanupPreset';
@@ -46,7 +51,8 @@ export const languages = [
   'pascal',
 ];
 
-export const removeFocusOutlines =
+export const removeFocusOutlines = '';
+export const removeFocusRings =
   'focus:outline-none focus:ring-0 focus:ring-opacity-0 focus:ring-offset-0';
 
 export const cardStyle =
@@ -60,3 +66,7 @@ export const optionText =
 
 export const defaultTextPropsLabel =
   'rounded-md border border-gray-300 bg-transparent text-sm shadow-[0_0_10px_rgba(0,0,0,0.10)] outline-none placeholder:text-gray-400 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:bg-gray-700 dark:text-gray-50 dark:shadow-[0_0_15px_rgba(0,0,0,0.10)] dark:focus:border-gray-600 dark:focus:outline-none';
+
+export function capitalizeFirstLetter(string: string) {
+  return string.charAt(0).toUpperCase() + string.slice(1);
+}
